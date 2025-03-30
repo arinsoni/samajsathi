@@ -40,9 +40,11 @@ def initialize_chat_history():
     if "is_problem" not in st.session_state:
         st.session_state.is_problem = None  # Unknown yet
     if "followup_stage" not in st.session_state:
-        st.session_state.followup_stage = 0  # 0: Not in follow-up; 1: waiting for impact; 2: waiting for suggestions
+        st.session_state.followup_stage = 0  # 0: Not in follow-up; 1: waiting for impact answer; 2: waiting for suggestions answer
     if "user_followup_responses" not in st.session_state:
         st.session_state.user_followup_responses = {}
+    if "original_message" not in st.session_state:
+        st.session_state.original_message = ""
 
 def classify_input(user_input, chat_model):
     # Revised prompt instructing the model to respond with exactly one word: "problem" or "not_a_problem"
@@ -55,57 +57,183 @@ def classify_input(user_input, chat_model):
     first_line = response.content.strip().splitlines()[0].lower()
     return "problem" in first_line and "not" not in first_line
 
+def generate_followup_question(question_type, context, chat_model):
+    """
+    Generates an empathetic follow-up question using AI.
+    question_type: "impact" or "suggestions"
+    context: relevant context text (e.g., user's original message or previous answer)
+    """
+    if question_type == "impact":
+        prompt = [
+            {"role": "system", "content": "Aap ek empathetic chatbot hain jo follow-up questions generate karte hain. Sirf ek clear question generate karein."},
+            {"role": "user", "content": f"User ne ye kaha: '{context}'. Iske adhar par, ek empathetic follow-up question generate karo jo user se pooche ki is problem ka unki rozana zindagi par kya asar pad raha hai?"}
+        ]
+    elif question_type == "suggestions":
+        prompt = [
+            {"role": "system", "content": "Aap ek empathetic chatbot hain jo follow-up questions generate karte hain. Sirf ek clear question generate karein."},
+            {"role": "user", "content": f"User ne ye bataya: '{context}'. Iske adhar par, ek empathetic follow-up question generate karo jo user se pooche ki unke hisaab se is problem ko behtar kaise kiya ja sakta hai?"}
+        ]
+    response = chat_model.invoke(prompt)
+    followup_question = response.content.strip().splitlines()[0]
+    return followup_question
+
+def generate_final_reply(context, chat_model):
+    """
+    Uses AI to generate a final, natural conversation reply based on the context of the follow-up answers.
+    """
+    prompt = [
+        {"role": "system", "content": "Aap ek empathetic chatbot hain jo user ke feedback ko samajh ke aage conversation continue karte hain."},
+        {"role": "user", "content": f"{context} Ab is adhar par, ek friendly aur natural reply generate karo jo conversation ko aage badhaaye."}
+    ]
+    response = chat_model.invoke(prompt)
+    return response.content.strip()
+
 def main():
-    st.set_page_config(page_title="Samaj-Sathi - Apni Baat, Apni Awaaz", page_icon="🗣️", layout="centered")
+    st.set_page_config(
+        page_title="Samaj-Sathi - Apni Baat, Apni Awaaz",
+        page_icon="🗣️",
+        layout="centered",
+        initial_sidebar_state="collapsed"
+    )
 
-    # Sidebar toggle for deep dive mode
-    deep_dive_enabled = st.sidebar.checkbox("Deep Dive Mode", value=True)
-
+    # Enhanced UI styling
     st.markdown("""
     <style>
-    .stTextInput > div > div > input {
-        background-color: #f9f9f9;
-        padding: 12px;
-        border-radius: 10px;
-    }
-    .chat-message {
-        padding: 15px;
-        border-radius: 15px;
-        margin-bottom: 12px;
-        display: flex;
-        flex-direction: column;
-        font-size: 1rem;
-    }
-    .assistant {
-        background-color: #e1f5fe;
-        margin-right: 25%;
-        align-self: flex-start;
-        color: black;
-    }
-    .user {
-        background-color: #d1c4e9;
-        margin-left: 25%;
-        align-self: flex-end;
-        color: black;
-    }
+        /* Global Styles */
+        .stApp {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        
+        /* Header Styling */
+        .header-container {
+            padding: 2rem 0;
+            text-align: center;
+            background: linear-gradient(135deg, #FF6B6B 0%, #FF8E53 100%);
+            color: white;
+            border-radius: 10px;
+            margin-bottom: 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* Chat Container */
+        .chat-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        /* Message Bubbles */
+        .chat-message {
+            padding: 15px;
+            border-radius: 15px;
+            margin-bottom: 15px;
+            display: flex;
+            flex-direction: column;
+            font-size: 1rem;
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        
+        .assistant {
+            background: linear-gradient(135deg, #e1f5fe 0%, #b3e5fc 100%);
+            margin-right: 25%;
+            align-self: flex-start;
+            color: #1a237e;
+            border-bottom-left-radius: 5px;
+            border-left: 4px solid #1a237e;
+        }
+        
+        .user {
+            background: linear-gradient(135deg, #d1c4e9 0%, #b39ddb 100%);
+            margin-left: 25%;
+            align-self: flex-end;
+            color: #311b92;
+            border-bottom-right-radius: 5px;
+        }
+        
+        /* Input Box Styling */
+        .stTextInput > div > div > input {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 25px;
+            border: 2px solid #e9ecef;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+        
+        .stTextInput > div > div > input:focus {
+            border-color: #FF6B6B;
+            box-shadow: 0 0 0 2px rgba(255, 107, 107, 0.25);
+        }
+        
+        /* Government Icon Style */
+        .govt-icon {
+            display: inline-block;
+            margin-right: 8px;
+            font-weight: bold;
+        }
+        
+        /* Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #6c757d;
+            font-size: 0.9rem;
+            margin-top: 2rem;
+        }
+        
+        /* Hide Streamlit Branding */
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+        
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .chat-message {
+                margin-left: 10%;
+                margin-right: 10%;
+            }
+        }
     </style>
     """, unsafe_allow_html=True)
 
-    st.title("🗣️ Samaj-Sathi")
-    st.markdown("_Apni baat, apni awaaz - voter engagement simplified!_")
+    # Header Section
+    st.markdown("""
+        <div class="header-container">
+            <h1>🗣️ Samaj-Sathi</h1>
+            <p style="font-size: 1.2rem;">Apni baat, apni awaaz - apni sarkar!</p>
+        </div>
+    """, unsafe_allow_html=True)
 
-    initialize_chat_history()
+    # Chat Interface
+    chat_container = st.container()
+    with chat_container:
+        initialize_chat_history()
 
-    # Display previous messages (excluding system prompt)
-    for message in st.session_state.messages[1:]:
-        role = message["role"]
-        st.markdown(f"""
-            <div class="chat-message {role}">
-                {message['content']}
-            </div>
-        """, unsafe_allow_html=True)
+        # Display chat messages (skip the system prompt)
+        for message in st.session_state.messages[1:]:
+            role = message["role"]
+            content = message["content"]
+            emoji = "👨‍💼 सेवक: " if role == "assistant" else "👤 "
+            st.markdown(f"""
+                <div class="chat-message {role}">
+                    <span class="govt-icon">{emoji}</span>
+                    {content}
+                </div>
+            """, unsafe_allow_html=True)
 
-    if user_input := st.chat_input("Apni baat yahaan likhein..."):
+    # Chat input with improved styling
+    user_input = st.chat_input("Apni baat yahaan likhein...", key="chat_input")
+
+    if user_input:
         # Append the user message to the conversation
         st.session_state.messages.append({"role": "user", "content": user_input})
 
@@ -117,60 +245,70 @@ def main():
             convert_system_message_to_human=True
         )
 
-        # Check if we have not classified this input yet
+        # If this is the first user message in this interaction
         if st.session_state.is_problem is None:
-            # Only classify if deep dive mode is enabled
-            if deep_dive_enabled:
+            # Store original message for context
+            st.session_state.original_message = user_input
+            # Only classify if deep dive mode is enabled; otherwise, skip deep dive
+            if True:
                 is_problem = classify_input(user_input, chat_model)
                 st.session_state.is_problem = is_problem
             else:
-                st.session_state.is_problem = True  # Skip deep dive if disabled
+                st.session_state.is_problem = True  # No deep dive if disabled
 
-            # If classified as a problem and deep dive is enabled, initiate follow-up
+            # If classified as a problem and deep dive is enabled, generate a follow-up question using AI
             if st.session_state.is_problem:
                 st.session_state.followup_stage = 1
-                followup_q = "Yeh sunke thoda dikkat lag raha hai. Isse aapki rozana zindagi kaise affect hoti hai?"
+                followup_q = generate_followup_question("impact", user_input, chat_model)
                 st.session_state.messages.append({"role": "assistant", "content": followup_q})
             else:
-                # Otherwise, get a normal conversation response
+                # Otherwise, continue with normal conversation
                 response = chat_model.invoke(st.session_state.messages)
                 bot_response = response.content.strip()
                 st.session_state.messages.append({"role": "assistant", "content": bot_response})
         else:
-            # If already in a deep dive conversation
+            # In an ongoing deep dive conversation
             if st.session_state.is_problem:
                 if st.session_state.followup_stage == 1:
-                    # Record impact response and ask for suggestions
+                    # Record impact answer and generate suggestions follow-up question
                     st.session_state.user_followup_responses["impact"] = user_input
                     st.session_state.followup_stage = 2
-                    followup_q = "Aapke hisaab se isko behtar karne ke liye kya kiya ja sakta hai?"
+                    context_for_suggestions = f"Original message: {st.session_state.original_message}. Impact: {user_input}"
+                    followup_q = generate_followup_question("suggestions", context_for_suggestions, chat_model)
                     st.session_state.messages.append({"role": "assistant", "content": followup_q})
                 elif st.session_state.followup_stage == 2:
-                    # Record suggestions response and then incorporate context
+                    # Record suggestions answer and generate a final reply using AI
                     st.session_state.user_followup_responses["suggestions"] = user_input
-                    st.session_state.followup_stage = 3
-                    followup_context = (
-                        f"User ne bataya: Impact - {st.session_state.user_followup_responses.get('impact', '')}; "
-                        f"Suggestions - {st.session_state.user_followup_responses.get('suggestions', '')}. "
-                        "Ab hum aage conversation ko in points ko dhyaan me rakhte hue continue karte hain."
+                    # Create context without exposing internal details
+                    context = (
+                        f"Impact: {st.session_state.user_followup_responses.get('impact', '')}; "
+                        f"Suggestions: {st.session_state.user_followup_responses.get('suggestions', '')}."
                     )
-                    st.session_state.messages.append({"role": "assistant", "content": followup_context})
+                    final_reply = generate_final_reply(context, chat_model)
+                    st.session_state.messages.append({"role": "assistant", "content": final_reply})
                     # Reset deep dive controls for future messages
                     st.session_state.is_problem = None
                     st.session_state.followup_stage = 0
                     st.session_state.user_followup_responses = {}
                 else:
-                    # If follow-up stages are complete, continue normal conversation
+                    # If follow-up stages are complete, continue with normal conversation
                     response = chat_model.invoke(st.session_state.messages)
                     bot_response = response.content.strip()
                     st.session_state.messages.append({"role": "assistant", "content": bot_response})
             else:
-                # Not a problem or deep dive mode disabled—continue normal conversation
+                # Not a problem or deep dive mode is disabled—continue normal conversation
                 response = chat_model.invoke(st.session_state.messages)
                 bot_response = response.content.strip()
                 st.session_state.messages.append({"role": "assistant", "content": bot_response})
 
         st.rerun()
+
+    # Footer
+    st.markdown("""
+        <div class="footer">
+            <p>जनता की आवाज़, सरकार के साथ</p>
+        </div>
+    """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
