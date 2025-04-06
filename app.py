@@ -5,10 +5,8 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 import speech_recognition as sr
 from google.cloud.speech_v1 import SpeechClient
 from google.cloud.speech_v1.types import RecognitionAudio, RecognitionConfig
-import pyaudio
 import wave
 import queue
-import threading
 
 # Load environment variables
 load_dotenv()
