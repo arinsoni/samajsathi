@@ -9,8 +9,6 @@ import pyaudio
 import wave
 import queue
 import threading
-from audio_recorder_streamlit import audio_recorder
-import io
 
 # Load environment variables
 load_dotenv()
@@ -365,28 +363,51 @@ def main():
     with col1:
         user_input = st.chat_input("Apni baat yahaan likhein...")
     
-    with col2:
-        # Replace PyAudio recording with streamlit-audio-recorder
-        audio_bytes = audio_recorder(
-            text="🎤",
-            recording_color="#FF6B6B",
-            neutral_color="#FF8E53",
-            icon_size="2x"
-        )
-        
-        if audio_bytes:
-            # Save audio bytes to file
-            with open("temp_audio.wav", "wb") as f:
-                f.write(audio_bytes)
-            
-            # Process the audio
-            with st.spinner('Processing audio...'):
-                transcript = process_audio()
-                if transcript:
-                    st.session_state.user_input = transcript
-                    st.rerun()
-                else:
-                    st.error("Could not transcribe audio. Please try again.")
+    # with col2:
+    #     if st.button("🎤", help="बोल कर बताएं"):
+    #         if not st.session_state.recording:
+    #             # Start recording
+    #             st.session_state.recording = True
+    #             st.session_state.audio_frames = []
+                
+    #             try:
+    #                 p = pyaudio.PyAudio()
+    #                 stream = p.open(
+    #                     format=pyaudio.paInt16,
+    #                     channels=1,
+    #                     rate=16000,
+    #                     input=True,
+    #                     frames_per_buffer=1024
+    #                 )
+                    
+    #                 placeholder = st.empty()
+    #                 placeholder.markdown('<p class="recording-indicator">● Recording...</p>', unsafe_allow_html=True)
+                    
+    #                 while st.session_state.recording:
+    #                     data = stream.read(1024, exception_on_overflow=False)
+    #                     st.session_state.audio_frames.append(data)
+                        
+    #             except Exception as e:
+    #                 st.error(f"Recording error: {str(e)}")
+    #             finally:
+    #                 try:
+    #                     stream.stop_stream()
+    #                     stream.close()
+    #                     p.terminate()
+    #                 except:
+    #                     pass
+    #         else:
+    #             # Stop recording
+    #             st.session_state.recording = False
+    #             if hasattr(st.session_state, 'audio_frames'):
+    #                 if save_audio_file(st.session_state.audio_frames):
+    #                     with st.spinner('Processing audio...'):
+    #                         transcript = process_audio()
+    #                         if transcript:
+    #                             st.session_state.user_input = transcript
+    #                             st.rerun()
+    #                         else:
+    #                             st.error("Could not transcribe audio. Please try again.")
     
     st.markdown('</div>', unsafe_allow_html=True)
 
